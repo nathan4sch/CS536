@@ -1,4 +1,4 @@
-Instructions for running Part 2 for environment:
+Instructions for running Part 2:
 1. Setup python environment
 ```console
 python -m venv venv
@@ -11,4 +11,4 @@ pip install matplotlib
 python latency_breakdown.py --input listed_iperf3_servers.csv --count 5
 ```
 
-3. View the output in outputs/
+3. View the results in outputs/
