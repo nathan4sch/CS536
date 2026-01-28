@@ -1,3 +1,9 @@
+import os
+
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+
 import argparse
 import csv
 import random
@@ -68,6 +74,43 @@ def compute_increments(
     return increments
 
 
+def get_ping_stats(target: str, count: int = 100, interval: float = 0.01) -> dict | None:
+    """
+    Pings a target and returns statistics.
+    Returns: dict {'min': float, 'avg': float, 'max': float} or None if failed.
+    """
+    import re
+    cmd = ["ping", "-c", str(count), "-i", str(interval), target]
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=count * interval + 10
+        )
+        
+        if result.returncode != 0:
+            return None
+
+        pattern = r"rtt min/avg/max/mdev = ([0-9.]+)/([0-9.]+)/([0-9.]+)/[0-9.]+ ms"
+        match = re.search(pattern, result.stdout)
+        
+        if match:
+            return {
+                'min': float(match.group(1)),
+                'avg': float(match.group(2)),
+                'max': float(match.group(3))
+            }
+        else:
+            return None
+
+    except Exception as e:
+        print(f"Error executing ping subprocess for {target}: {e}")
+        return None
+
+
 def save_stacked_bar(data: list[dict], out_path: Path) -> None:
     labels = [d["host"] for d in data]
     max_hops = max((len(d["increments"]) for d in data), default=0)
@@ -105,22 +148,22 @@ def save_stacked_bar(data: list[dict], out_path: Path) -> None:
 
 def save_scatter(data: list[dict], out_path: Path) -> None:
     hop_counts = []
-    final_rtts = []
+    ping_rtts = []
     labels = []
     for d in data:
-        if not d["increments"]:
+        if not d["increments"] or "ping_rtt" not in d:
             continue
         hop_counts.append(len(d["increments"]))
-        final_rtts.append(d["increments"][-1][1])
+        ping_rtts.append(d["ping_rtt"])
         labels.append(d["host"])
 
     plt.figure(figsize=(8, 6))
-    plt.scatter(hop_counts, final_rtts)
-    for x, y, label in zip(hop_counts, final_rtts, labels):
+    plt.scatter(hop_counts, ping_rtts)
+    for x, y, label in zip(hop_counts, ping_rtts, labels):
         plt.annotate(label, (x, y), fontsize="x-small", alpha=0.7)
     plt.xlabel("Hop Count")
-    plt.ylabel("RTT to Destination (ms)")
-    plt.title("Hop Count vs RTT")
+    plt.ylabel("Ping RTT (ms)")
+    plt.title("Hop Count vs Ping RTT")
     plt.tight_layout()
     plt.savefig(out_path, format="pdf")
     plt.close()
@@ -149,18 +192,22 @@ def main() -> None:
     if len(hosts) < args.count:
         raise SystemExit("Not enough hosts in input file.")
 
-    selected = random.sample(hosts, args.count)
+    #selected = random.sample(hosts, args.count)
+    # we coded random sampling but will select 5 to use via Piazza post 27
+    selected = ["spd-icsrv.hostkey.com", "speedtestfl.telecom.mu", "t5.cscs.ch", "a210.speedtest.wobcom.de", "yyc-speedtest.xplore.ca"]
 
     data = []
     for host in selected:
         hop_rtts = run_traceroute(host, args.timeout)
         increments = compute_increments(hop_rtts)
-        data.append({"host": host, "increments": increments})
+        ping_stats = get_ping_stats(host)
+        ping_rtt = ping_stats['avg'] if ping_stats else None
+        data.append({"host": host, "increments": increments, "ping_rtt": ping_rtt})
 
-    Path("outputs").mkdir(exist_ok=True)
-    save_csv(data, Path("outputs/latency_breakdown.csv"))
-    save_stacked_bar(data, Path("outputs/latency_breakdown_stacked.pdf"))
-    save_scatter(data, Path("outputs/hopcount_vs_rtt.pdf"))
+    Path("part2_outputs").mkdir(exist_ok=True)
+    save_csv(data, Path("part2_outputs/latency_breakdown.csv"))
+    save_stacked_bar(data, Path("part2_outputs/latency_breakdown_stacked.pdf"))
+    save_scatter(data, Path("part2_outputs/hopcount_vs_rtt.pdf"))
 
     print("Selected hosts:")
     for s in selected:
@@ -172,11 +219,13 @@ def main() -> None:
         last_rtt = None
         if hops:
             last_rtt = d["increments"][-1][1]
-        print(f"{d['host']}: hops={hops} rtt_ms={last_rtt}")
+        ping_rtt = d.get("ping_rtt")
+        ping_rtt_str = f"{ping_rtt:.3f}" if ping_rtt else "N/A"
+        print(f"{d['host']}: hops={hops} traceroute_rtt_ms={last_rtt} ping_rtt_ms={ping_rtt_str}")
         for hop_idx, rtt, inc in d["increments"]:
             print(f"  hop {hop_idx}: rtt_ms={rtt:.3f} incremental_ms={inc:.3f}")
         print("")
-    print("Outputs written to ./outputs")
+    print("Outputs written to ./part2_outputs")
 
 
 if __name__ == "__main__":

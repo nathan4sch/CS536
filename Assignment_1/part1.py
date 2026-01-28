@@ -18,7 +18,7 @@ import time
 import matplotlib.pyplot as plt
 
 INPUT_FILE = 'listed_iperf3_servers.csv'
-COMPLETE_INPUT_FILE = 'server_locations.csv'
+COMPLETE_INPUT_FILE = 'part1_outputs/server_locations.csv'
 DELAY_SECONDS = 1.5
 
 def get_location_data():
@@ -32,6 +32,7 @@ def get_location_data():
                 targets.append(row['IP/HOST'])
 
     # 2. Process and Write Lat Lon to new csv
+    os.makedirs(os.path.dirname(COMPLETE_INPUT_FILE), exist_ok=True)
     with open(COMPLETE_INPUT_FILE, 'w', newline='', encoding='utf-8') as out_f:
         fieldnames = ['IP', 'Latitude', 'Longitude', 'City', 'Country']
         writer = csv.DictWriter(out_f, fieldnames=fieldnames)
@@ -163,7 +164,8 @@ def create_scatter_plot(results):
     plt.grid(True, linestyle='--', alpha=0.6)
     
     # Save directly to PDF
-    output_filename = "rtt_vs_distance.pdf"
+    os.makedirs('part1_outputs', exist_ok=True)
+    output_filename = "part1_outputs/rtt_vs_distance.pdf"
     plt.savefig(output_filename)
     print(f"Plot saved successfully as '{output_filename}'")
     
