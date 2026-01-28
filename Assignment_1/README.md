@@ -12,3 +12,8 @@ python latency_breakdown.py --input listed_iperf3_servers.csv --count 5
 ```
 
 3. View the output in outputs/
+
+For write up:
+Used codex for some of the code.
+
+rtt does not have much of a correlation with hop count just based on the data. Maybe slightly positive.

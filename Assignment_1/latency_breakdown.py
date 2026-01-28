@@ -19,19 +19,9 @@ def read_hosts(csv_path: Path) -> list[str]:
 
 
 def run_traceroute(host: str, timeout_s: int) -> list[tuple[int, float]]:
-    cmd = [
-        "traceroute",
-        "-n",
-        "-q",
-        "1",
-        "-w",
-        str(timeout_s),
-        host,
-    ]
+    cmd = ["traceroute", "-n", "-q", "1", "-w", str(timeout_s), host]
     try:
-        result = subprocess.run(
-            cmd, check=False, capture_output=True, text=True
-        )
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
     except FileNotFoundError as exc:
         raise SystemExit("traceroute not found. Please install traceroute.") from exc
 
@@ -41,39 +31,40 @@ def run_traceroute(host: str, timeout_s: int) -> list[tuple[int, float]]:
         if not line or line.startswith("traceroute"):
             continue
         parts = line.split()
-        # Expected forms:
-        # 1 192.168.0.1 1.234 ms
-        # 2 * * *
         if len(parts) < 2:
             continue
-        try:
-            hop_idx = int(parts[0])
-        except ValueError:
-            continue
+        # print(f"{parts=}")
+        hop_idx = int(parts[0])
         if "*" in parts:
-            continue
-        # Find first token that looks like a float RTT
-        rtt = None
-        for token in parts[2:]:
-            try:
-                rtt = float(token)
-                break
-            except ValueError:
-                continue
-        if rtt is None:
-            continue
+            rtt = 0.0
+        else:
+            rtt = float(parts[2])
         hop_rtts.append((hop_idx, rtt))
+
+    # Remove extra hops at end that are all unreachable
+    i = 0
+    for hop in reversed(hop_rtts):
+        if hop[1] != 0.0:
+            if i == 0:
+                break
+            hop_rtts = hop_rtts[0:-i]
+            break
+        i += 1
+
     return hop_rtts
 
 
-def compute_increments(hop_rtts: list[tuple[int, float]]) -> list[tuple[int, float, float]]:
+def compute_increments(
+    hop_rtts: list[tuple[int, float]],
+) -> list[tuple[int, float, float]]:
     hop_rtts = sorted(hop_rtts, key=lambda x: x[0])
     increments = []
     prev = 0.0
     for hop_idx, rtt in hop_rtts:
         inc = max(0.0, rtt - prev)
         increments.append((hop_idx, rtt, inc))
-        prev = rtt
+        if rtt != 0.0:
+            prev = rtt
     return increments
 
 
@@ -95,7 +86,9 @@ def save_stacked_bar(data: list[dict], out_path: Path) -> None:
                     inc = inc_val
                     break
             vals.append(inc)
-        ax.bar(labels, vals, bottom=bottoms, label=f"hop {hop_i}", color=colors[hop_i - 1])
+        ax.bar(
+            labels, vals, bottom=bottoms, label=f"hop {hop_i}", color=colors[hop_i - 1]
+        )
         bottoms = [b + v for b, v in zip(bottoms, vals)]
     ax.set_ylabel("Incremental RTT (ms)")
     ax.set_title("Latency Breakdown by Hop (Stacked)")
@@ -133,7 +126,7 @@ def save_scatter(data: list[dict], out_path: Path) -> None:
     plt.close()
 
 
-def write_csv(data: list[dict], out_path: Path) -> None:
+def save_csv(data: list[dict], out_path: Path) -> None:
     with out_path.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["host", "hop_index", "rtt_ms", "increment_ms"])
@@ -143,10 +136,13 @@ def write_csv(data: list[dict], out_path: Path) -> None:
 
 
 def main() -> None:
+    print(
+        "Note: Extra hops at end of traceroute that are all unreachable are removed from data."
+    )
     parser = argparse.ArgumentParser(description="Latency breakdown via traceroute.")
     parser.add_argument("--input", default="listed_iperf3_servers.csv")
     parser.add_argument("--count", type=int, default=5)
-    parser.add_argument("--timeout", type=int, default=2)
+    parser.add_argument("--timeout", type=int, default=3)
     args = parser.parse_args()
 
     hosts = read_hosts(Path(args.input))
@@ -162,18 +158,24 @@ def main() -> None:
         data.append({"host": host, "increments": increments})
 
     Path("outputs").mkdir(exist_ok=True)
-    write_csv(data, Path("outputs/latency_breakdown.csv"))
+    save_csv(data, Path("outputs/latency_breakdown.csv"))
     save_stacked_bar(data, Path("outputs/latency_breakdown_stacked.pdf"))
     save_scatter(data, Path("outputs/hopcount_vs_rtt.pdf"))
 
-    print("Selected hosts:", ", ".join(selected))
+    print("Selected hosts:")
+    for s in selected:
+        print(f"  {s}")
+    print("")
+
     for d in data:
         hops = len(d["increments"])
-        last_rtt = d["increments"][-1][1] if hops else None
+        last_rtt = None
+        if hops:
+            last_rtt = d["increments"][-1][1]
         print(f"{d['host']}: hops={hops} rtt_ms={last_rtt}")
         for hop_idx, rtt, inc in d["increments"]:
-            print(f"  hop {hop_idx}: rtt_ms={rtt:.3f} inc_ms={inc:.3f}")
-        print("\n")
+            print(f"  hop {hop_idx}: rtt_ms={rtt:.3f} incremental_ms={inc:.3f}")
+        print("")
     print("Outputs written to ./outputs")
 
 
