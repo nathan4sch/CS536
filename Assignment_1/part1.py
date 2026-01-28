@@ -28,44 +28,86 @@ Approximate round trip times in milli-seconds:
 
 import os
 
-# FORCE single-threaded operation to avoid crashing university servers
+# FORCE single-threaded operation
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 
 import csv
+import json
+import urllib.request
 import subprocess
 import re
 import sys
-import json
-import urllib.request
 import math
 import time
 import matplotlib.pyplot as plt
 
+INPUT_FILE = 'listed_iperf3_servers.csv'
+COMPLETE_INPUT_FILE = 'server_locations.csv'
+DELAY_SECONDS = 1.5
 
-# should I redo this or hardcode?
-def get_location_data(ip_address):
-    """
-    Queries ip-api.com to get Lat/Lon for a specific IP.
-    Returns: dict {'lat': float, 'lon': float} or None.
-    """
-    url = f"http://ip-api.com/json/{ip_address}"
-    try:
-        # 5 second timeout to prevent hanging
-        with urllib.request.urlopen(url, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            if data['status'] == 'success':
-                return {'lat': data['lat'], 'lon': data['lon']}
-            return None
-    except Exception as e:
-        # print(f"Geo lookup failed: {e}") # Uncomment to debug
-        return None
-    
+def get_location_data():
+    print("Querying ip-api.com to get Lat Lon of IPs")
+    targets = []
+    # 1. Read the Input CSV
+    with open(INPUT_FILE, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row.get('IP/HOST'):
+                targets.append(row['IP/HOST'])
+
+    # 2. Process and Write Lat Lon to new csv
+    with open(COMPLETE_INPUT_FILE, 'w', newline='', encoding='utf-8') as out_f:
+        fieldnames = ['IP', 'Latitude', 'Longitude', 'City', 'Country']
+        writer = csv.DictWriter(out_f, fieldnames=fieldnames)
+        writer.writeheader()
+
+        total = len(targets)
+
+        for i, ip in enumerate(targets, 1):            
+            # Queries ip-api.com to get Lat/Lon.
+            url = f"http://ip-api.com/json/{ip}"
+            geo_data = None
+            try:
+                # 5 second timeout to prevent hanging
+                with urllib.request.urlopen(url, timeout=5) as response:
+                    data = json.loads(response.read().decode())
+                    
+                    if data['status'] == 'success':
+                        geo_data = {
+                            'ip': ip,
+                            'lat': data['lat'], 
+                            'lon': data['lon'],
+                            'city': data.get('city', 'Unknown'),
+                            'country': data.get('country', 'Unknown')
+                        }
+                    else:
+                        geo_data = None
+            except Exception as e:
+                print(f"  [!] Error fetching {ip}: {e}")
+                return None
+
+            if geo_data:
+                writer.writerow({
+                    'IP': ip,
+                    'Latitude': geo_data['lat'],
+                    'Longitude': geo_data['lon'],
+                    'City': geo_data['city'],
+                    'Country': geo_data['country']
+                })
+                out_f.flush() 
+            else:
+                writer.writerow({'IP': ip, 'Latitude': '', 'Longitude': '', 'City': 'Failed', 'Country': ''})
+
+            time.sleep(DELAY_SECONDS)
+
+    print("Lat Lon data sent to server_locations.csv")
+
 
 def calculate_haversine_distance(lat1, lon1, lat2, lon2):
     """
-    Calculates the great-circle distance between two points on the Earth.
+    Calculates distance between two points on the Earth.
     Returns: Distance in Kilometers (km).
     """
     R = 6371.0  # Radius of Earth in kilometers
@@ -83,8 +125,7 @@ def calculate_haversine_distance(lat1, lon1, lat2, lon2):
     distance = R * c
     return distance
 
-# add something to retry the pinging to make sure the host is dead
-def get_ping_stats(target, count=1, interval=0.01):
+def get_ping_stats(target, count=100, interval=0.01):
     """
     Pings a target
     Returns: dict {'min': float, 'avg': float, 'max': float} or None if failed.
@@ -102,11 +143,9 @@ def get_ping_stats(target, count=1, interval=0.01):
             text=True
         )
         
-        # If the ping command failed (exit code != 0), it might be a dead host
         if result.returncode != 0:
             return None
 
-        # Linux Output: "rtt min/avg/max/mdev = 49.123/50.456/52.789/1.234 ms"
         pattern = r"rtt min/avg/max/mdev = ([0-9.]+)/([0-9.]+)/([0-9.]+)/[0-9.]+ ms"
         match = re.search(pattern, result.stdout)
         
@@ -127,13 +166,10 @@ def create_scatter_plot(results):
     """
     Generates a PDF scatter plot of Distance vs RTT.
     """
-
-    print("Generating scatter plot...")
     
     distances = []
     rtts = []
     
-    # Extract valid data points
     for item in results:
         # Filter out "Unknown" distances or 0 distance (local) if desired
         if item['dist'] is not None and item['dist'] >= 0:
@@ -144,11 +180,9 @@ def create_scatter_plot(results):
         print("No valid data points to plot.")
         return
 
-    # Create the Plot
     plt.figure(figsize=(10, 6))
     plt.scatter(distances, rtts, color='blue', alpha=0.7, edgecolors='black')
     
-    # Formatting
     plt.title("Distance vs Round Trip Time (RTT)")
     plt.xlabel("Geographical Distance (km)")
     plt.ylabel("Average RTT (ms)")
@@ -159,49 +193,43 @@ def create_scatter_plot(results):
     plt.savefig(output_filename)
     print(f"Plot saved successfully as '{output_filename}'")
     
-    # Close plot to free memory
     plt.close()
 
 
 def main():
     # Hardcoded Location: West Lafayette, IN (Purdue)
+    get_location_data()
+
     origin_lat = 40.4237
     origin_lon = -86.9212
-    
-    input_file = 'listed_iperf3_servers.csv'
     
     results = []
 
     print("-" * 110)
-    print(f"{'Target':<30} {'Status':<8} {'Min RTT':<10} {'Max RTT':<10} {'Avg RTT':<10} {'Distance (km)':<15}")
+    print(f"{'Target':<30} {'Status':<8} {'Min RTT (ms)':<10} {'Max RTT (ms)':<10} {'Avg RTT (ms)':<10} {'Distance (km)':<15}")
     print("-" * 110)
 
     try:
-        with open(input_file, 'r', encoding='utf-8') as f:
+        with open(COMPLETE_INPUT_FILE, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
 
             for row in reader:
-                target = row['IP/HOST']
-                if not target: continue
+                target = row['IP']
+                target_lat = float(row['Latitude'])
+                target_lon = float(row['Longitude'])
 
                 # STEP 1: Ping
                 stats = get_ping_stats(target)
 
                 if stats:
-                    # STEP 2: Geolocation & Distance
-                    geo_data = get_location_data(target)
-                    
-                    dist_km = 0.0
-                    if geo_data:
-                        dist_km = calculate_haversine_distance(
-                            origin_lat, origin_lon,
-                            geo_data['lat'], geo_data['lon']
-                        )
-                        dist_display = f"{dist_km:.1f}"
-                    else:
-                        dist_display = "Unknown"
+                    # STEP 2: Calculate Distance directly from CSV data
+                    dist_km = calculate_haversine_distance(
+                        origin_lat, origin_lon,
+                        target_lat, target_lon
+                    )
+                    dist_display = f"{dist_km:.1f}"
 
-                    # Print all stats clearly
+                    # Print stats
                     print(f"{target:<30} {'UP':<8} {stats['min']:<10.2f} {stats['max']:<10.2f} {stats['avg']:<10.2f} {dist_display:<15}")
 
                     results.append({
@@ -209,13 +237,11 @@ def main():
                         'stats': stats,
                         'dist': dist_km
                     })
-                    
-                    time.sleep(0.5) 
                 else:
                     print(f"{target:<30} {'DOWN':<8} {'-':<10} {'-':<10} {'-':<10} {'-':<15}")
 
     except FileNotFoundError:
-        print(f"Error: Could not find {input_file}.")
+        print(f"Error: Could not find {COMPLETE_INPUT_FILE}.")
     except Exception as e:
         print(f"Error: {e}")
 
