@@ -3,7 +3,7 @@
 ## Requirements
 
 - Python 3 with the executable name `python`
-- `pip` (Python package manager)
+- `pip` to install packages
 - `ping` and `traceroute` utilities 
 
 ## Running the Code
