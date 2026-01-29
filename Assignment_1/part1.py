@@ -21,9 +21,22 @@ INPUT_FILE = 'listed_iperf3_servers.csv'
 COMPLETE_INPUT_FILE = 'part1_outputs/server_locations.csv'
 DELAY_SECONDS = 1.5
 
+def get_public_ip():
+    try:
+        # queries a tiny service to get the IP address as text
+        with urllib.request.urlopen('http://ifconfig.me/ip', timeout=5) as response:
+            return response.read().decode('utf-8').strip()
+    except Exception as e:
+        print(f"Default to data.cs.purdue.edu")
+        return '128.10.2.13'
+
 def get_location_data():
     print("Querying ip-api.com to get Lat Lon of IPs")
-    targets = []
+    # Initialize Targets with our IP first
+    my_ip = get_public_ip()
+    print(f"Detected My IP: {my_ip}")
+    targets = [my_ip]
+
     # 1. Read the Input CSV
     with open(INPUT_FILE, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
@@ -176,8 +189,8 @@ def main():
     # Hardcoded Location: West Lafayette, IN (Purdue)
     get_location_data()
 
-    origin_lat = 40.4237
-    origin_lon = -86.9212
+    origin_lat = 40.4444
+    origin_lon = -86.9256
     
     results = []
 
