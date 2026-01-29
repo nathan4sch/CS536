@@ -2,11 +2,9 @@
 
 ## Requirements
 
-- Python 3 with the executable name `python` (not `python3`)
-  - If your system only has `python3`, create a symlink: `sudo ln -s /usr/bin/python3 /usr/bin/python`
+- Python 3 with the executable name `python`
 - `pip` (Python package manager)
-- Internet connection (for part1.py to query ip-api.com)
-- `ping` and `traceroute` utilities (typically pre-installed on Linux/macOS)
+- `ping` and `traceroute` utilities 
 
 ## Running the Code
 
