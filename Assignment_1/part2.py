@@ -194,7 +194,7 @@ def main() -> None:
 
     #selected = random.sample(hosts, args.count)
     # we coded random sampling but will select 5 to use via Piazza post 27
-    selected = ["spd-icsrv.hostkey.com", "speedtestfl.telecom.mu", "t5.cscs.ch", "a210.speedtest.wobcom.de", "yyc-speedtest.xplore.ca"]
+    selected = ["speedtest.kamel.network", "speedtest.keff.org", "lg.gigahost.no", "speedtest.sfo12.us.leaseweb.net", "atl.speedtest.clouvider.net"]
 
     data = []
     for host in selected:
