@@ -21,6 +21,10 @@ INPUT_FILE = 'listed_iperf3_servers.csv'
 COMPLETE_INPUT_FILE = 'part1_outputs/server_locations.csv'
 DELAY_SECONDS = 1.5
 
+'''
+we need to ping an outside server.
+-We send a get request to this url that just returns the ip address of the requester
+'''
 def get_public_ip():
     try:
         # queries a tiny service to get the IP address as text
