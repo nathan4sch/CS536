@@ -17,11 +17,13 @@ RUN apt-get update && apt-get install -y \
 # Set the working directory
 WORKDIR /app
 
-# Copy the local codebase into the container
-COPY . /app
+# 1. ONLY copy the requirements list first
+COPY requirements.txt /app/
 
-# Install ML and plotting dependencies globally in the container
+# 2. Install dependencies (This layer is now safely cached!)
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
-# The full pipeline automation script
-ENTRYPOINT ["python3", "run_experiments.py"]
+# 3. NOW copy your local codebase into the container
+COPY . /app/
+
+CMD ["python3", "iperf3_client.py", "-n", "10", "-t", "15"]
