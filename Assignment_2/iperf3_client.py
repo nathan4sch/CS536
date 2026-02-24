@@ -17,12 +17,10 @@ class Iperf3Client:
         self.server_port = server_port
         self.duration = duration
         
-        # We will need two separate sockets
         self.control_socket = None
         self.data_socket = None
         self.cookie = self._generate_cookie()
 
-        # Array to store (timestamp, goodput_bps)
         self.goodput_data = []
 
     def _generate_cookie(self):
@@ -69,8 +67,7 @@ class Iperf3Client:
         self.data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.data_socket.connect((self.server_ip, self.server_port))
         
-        # Send the exact same cookie
-        self.data_socket.sendall(self.cookie.encode('ascii') + b'\0')
+        self.data_socket.sendall(self.cookie.encode('ascii') + b'\0') # send cookie
 
     def transmit_data(self):
         """ (iv) Transmit data continuously for a configurable duration. """
@@ -89,28 +86,24 @@ class Iperf3Client:
                 # --- PART 1(c): EXTRACT TCP_INFO GOODPUT ---
                 current_time = time.time()
                 interval = current_time - last_check_time
+                elapsed_test_time = current_time - start_time
                 
-                # Poll stats roughly every 1.0 second
                 if interval >= 1.0:
                     try:
-                        # Grab the first 128 bytes of the tcp_info struct from the Linux kernel
                         tcp_info_data = self.data_socket.getsockopt(socket.IPPROTO_TCP, TCP_INFO, 128)
-                        
-                        # tcpi_bytes_acked is an unsigned 64-bit int ('Q') at byte offset 120
                         bytes_acked = struct.unpack("Q", tcp_info_data[120:128])[0]
-                        
                         interval_acked = bytes_acked - last_bytes_acked
                         
                         # Calculate Goodput: (bytes / seconds) * 8 = bits/sec
                         goodput_bps = (interval_acked / interval) * 8
                         
-                        # Store relative time and goodput
                         self.goodput_data.append((current_time - start_time, goodput_bps))
-                        
                         last_bytes_acked = bytes_acked
                         last_check_time = current_time
                         
                     except Exception as e:
+                        if isinstance(e, ConnectionAbortedError):
+                            raise e
                         pass # Failsafe if kernel struct differs
                         
         except (BrokenPipeError, ConnectionResetError):
@@ -148,7 +141,7 @@ class Iperf3Client:
             payload = struct.pack('>I', len(json_str)) + json_str
             self.control_socket.sendall(payload)
             
-            self.control_socket.recv(4096) # this gives stats but we cant use these
+            self.control_socket.recv(4096)
             
             state = self.control_socket.recv(1)
             while state and state != b'\x0e':
@@ -159,7 +152,7 @@ class Iperf3Client:
         except socket.timeout:
             pass 
         except Exception as e:
-            print(f"[-] Minor error during termination: {e}")
+            print(f"[-] error during termination: {e}")
         finally:
             if self.control_socket:
                 self.control_socket.close()
@@ -181,30 +174,21 @@ class Iperf3Client:
 
 # python3 iperf3_client.py -n 10 -t 15
 # docker run --rm -v $(pwd):/app cs536-assign2 python3 iperf3_client.py -n 5 -t 15
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="iPerf3 Client with Goodput Measurement")
-    parser.add_argument('-n', type=int, default=3, help="Number of random servers to test")
-    parser.add_argument('-t', type=int, default=15, help="Duration of each test in seconds")
-    args = parser.parse_args()
-
+def run_iperf_tests(num_servers, duration):
     public_servers = []
     
-    # 1. Read the servers dynamically from the CSV
     print("[*] Loading servers from iperf3serverlist.csv...")
     try:
         with open('iperf3serverlist.csv', mode='r', encoding='utf-8') as csv_file:
-            # DictReader automatically uses the first row as dictionary keys
             reader = csv.DictReader(csv_file)
             for row in reader:
                 host = row['IP/HOST']
                 port_str = row['PORT']
                 
                 if not host or not port_str:
-                    continue # Skip empty rows
+                    continue 
                 
-                # 2. Handle port ranges (e.g., "5201-5209" -> 5201)
                 if '-' in port_str:
-                    # Split at the dash and take the first number
                     port = int(port_str.split('-')[0])
                 else:
                     port = int(port_str)
@@ -220,16 +204,15 @@ if __name__ == "__main__":
     
     successful_tests = 0
     server_index = 0
-    all_results = {} # Store results for plotting { "server_ip": [(time, bps), ...] }
+    all_results = {}
 
-    print(f"\n[*] Attempting to successfully test {args.n} random public servers...\n")
+    print(f"\n[*] Attempting to successfully test {num_servers} random public servers...\n")
 
-    # Loop until we get 'n' successful tests
-    while successful_tests < args.n and server_index < len(public_servers):
+    while successful_tests < num_servers and server_index < len(public_servers):
         target_ip, target_port = public_servers[server_index]
-        print(f"--- Test {successful_tests + 1}/{args.n}: {target_ip}:{target_port} ---")
+        print(f"--- Test {successful_tests + 1}/{num_servers}: {target_ip}:{target_port} ---")
         
-        client = Iperf3Client(server_ip=target_ip, server_port=target_port, duration=args.t)
+        client = Iperf3Client(server_ip=target_ip, server_port=target_port, duration=duration)
         success, goodput_data = client.run()
         
         if success and len(goodput_data) > 0:
@@ -245,16 +228,14 @@ if __name__ == "__main__":
         print("[-] Could not connect to any servers.")
         exit()
 
-    # --- PLOTTING AND STATISTICS ---
     print("\n" + "="*50)
-    print("GOODPUT SUMMARY STATISTICS (Bits/sec)")
+    print("GOODPUT SUMMARY STATISTICS (Megabits/sec)")
     print("="*50)
     
     plt.figure(figsize=(10, 6))
     
     for server, data in all_results.items():
         times = [d[0] for d in data]
-        # Convert raw bits to Megabits (Mbps)
         mbps = [d[1] / 1_000_000 for d in data] 
         
         plt.plot(times, mbps, marker='o', label=server)
@@ -273,6 +254,13 @@ if __name__ == "__main__":
     plt.grid(True)
     plt.legend()
     
-    # Save the plot instead of trying to open a GUI window in WSL
     plt.savefig("goodput_plot.png")
     print("\n[+] Plot saved as 'goodput_plot.png' in your current directory.")
+
+# Allows the script to still be run independently if needed
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="iPerf3 Client with Goodput Measurement")
+    parser.add_argument('-n', type=int, default=3, help="Number of random servers to test")
+    parser.add_argument('-t', type=int, default=15, help="Duration of each test in seconds")
+    args = parser.parse_args()
+    run_iperf_tests(args.n, args.t)
