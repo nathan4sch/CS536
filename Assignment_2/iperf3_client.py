@@ -18,7 +18,6 @@ class Iperf3Client:
         self.cookie = self._generate_cookie()
 
     def _generate_cookie(self):
-        """unique ID so the server knows which data connection belongs to which control connection"""
         chars = string.ascii_letters + string.digits
         cookie = ''.join(random.choice(chars) for _ in range(36))
         return cookie
@@ -34,9 +33,7 @@ class Iperf3Client:
         
         print(f"[+] Successfully connected to {self.server_ip}")
 
-        """ (ii) Perform the JSON-based parameter exchange. """
-        print("[*] Exchanging parameters with server...")
-        
+        """ (ii) Perform the JSON-based parameter exchange. """        
         # Send cookie
         self.control_socket.sendall(self.cookie.encode('ascii') + b'\0')
         self.control_socket.recv(1)
@@ -58,22 +55,17 @@ class Iperf3Client:
         # Send the length of the JSON string as a 4-byte integer, followed by the JSON itself.
         self.control_socket.sendall(struct.pack('>I', len(json_str)) + json_str)
         self.control_socket.recv(1)
-        print("[+] Parameter exchange successful.")        
 
     def open_data_connection(self):
         """ (iii) Open the data connection. """
-        print("[*] Opening data connection...")
         self.data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.data_socket.connect((self.server_ip, self.server_port))
         
-        # Send the exact same cookie on this new socket so the server links them together
+        # Send the exact same cookie
         self.data_socket.sendall(self.cookie.encode('ascii') + b'\0')
-        print("[+] Data connection established.")
 
     def transmit_data(self):
         """ (iv) Transmit data continuously for a configurable duration. """
-        print(f"[*] Starting data transmission for {self.duration} seconds...")
-        
         chunk = b'\x00' * 131072  # payload to send
         
         start_time = time.time()
@@ -85,15 +77,17 @@ class Iperf3Client:
                 # TODO: Part 1(c) and 2(a) - We will pause here to extract TCP_INFO and calculate Goodput!
         except BrokenPipeError:
             print("[-] Server closed the data connection prematurely.")
-            
-        print("[+] Transmission complete.")
 
+
+    # this part might still be wrong
+    # iperf3 -s
+    # python3 iperf3_client.py
     def terminate_test(self):
         """ (v) Properly terminate the test following iperf3 semantics. """
         print("[*] Terminating test...")
         
         try:
-            # Tell server the test is over
+            # Tell the server the test is over
             self.control_socket.sendall(b'\x04')
             
             if self.data_socket:
@@ -101,13 +95,10 @@ class Iperf3Client:
 
             self.control_socket.settimeout(2.0)
             
-            # 3. Wait for the server to reply with State 13 (EXCHANGE_RESULTS = \x0d)
-            # This loop also clears out any leftover bytes in the pipe
             state = self.control_socket.recv(1)
             while state and state != b'\x0d': 
                 state = self.control_socket.recv(1)
                 
-            # 4. Build the JSON stats block 
             client_stats = {
                 "cpu_util_total": 1.0,
                 "cpu_util_user": 0.5,
@@ -117,26 +108,21 @@ class Iperf3Client:
                 "streams": [{"id": 1, "bytes": 0, "retransmits": 0, "jitter": 0, "errors": 0, "omitted_errors": 0, "packets": 0, "omitted_packets": 0, "start_time": 0, "end_time": self.duration}]
             }
             json_str = json.dumps(client_stats).encode('ascii')
-            
-            # 5. Pack the length and the JSON 
             payload = struct.pack('>I', len(json_str)) + json_str
             self.control_socket.sendall(payload)
             print("[+] Sent client termination stats.")
             
-            # 6. Clear the pipe by reading the server's final JSON response
-            self.control_socket.recv(4096)
+            self.control_socket.recv(4096) # this gives stats but we cant use these
             print("[+] Received server termination stats.")
-
-            # 7. THE FINAL GOODBYE: Let the server hang up first!
-            # We keep reading from the pipe until the server sends a TCP FIN (which makes recv return an empty byte string)
-            while True:
-                final_bytes = self.control_socket.recv(1024)
-                if not final_bytes: # b'' means the server closed the socket
-                    break
-            print("[+] Server gracefully closed the connection. Safe to exit.")
+            
+            state = self.control_socket.recv(1)
+            while state and state != b'\x0e':
+                state = self.control_socket.recv(1)
+            
+            self.control_socket.sendall(b'\x0f')
+            print("[+] Sent IPERF_DONE. Protocol handshake complete.")
             
         except socket.timeout:
-            # Timeouts are fine here, it just means the server closed early
             pass 
         except Exception as e:
             print(f"[-] Minor error during termination: {e}")
@@ -148,7 +134,6 @@ class Iperf3Client:
     def run(self):
         """ The master function that orchestrates the entire test securely. """
         try:
-            print(f"Connecting to {self.server_ip}...")
             self.open_control_connection()
             self.open_data_connection()
             self.transmit_data()
