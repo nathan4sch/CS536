@@ -26,4 +26,8 @@ RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 # 3. NOW copy your local codebase into the container
 COPY . /app/
 
-CMD ["python3", "iperf3_client.py", "-n", "10", "-t", "15"]
+# Lock the container to always execute your master script 
+ENTRYPOINT ["python3", "-u", "run_experiments.py"]
+
+# default args
+CMD ["-n", "10", "-t", "15"]
