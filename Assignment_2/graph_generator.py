@@ -79,7 +79,7 @@ def plot_part2_tcp_metrics(all_results):
     print(f"[+] Saved time series plot to {ts_filename}")
 
     # --- 2. Scatter Plots ---
-    fig, axs = plt.subplots(1, 3, figsize=(18, 5))
+    fig, axs = plt.subplots(3, 1, figsize=(6, 15))
     fig.suptitle(f"TCP Scatter Plots for {server_ip}", fontsize=16)
 
     axs[0].scatter(cwnd, goodput, color='g')

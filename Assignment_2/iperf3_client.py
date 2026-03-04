@@ -132,7 +132,6 @@ class Iperf3Client:
             print("[-] Server closed the data connection prematurely.")
 
 
-    # this part might still be wrong
     # iperf3 -s, python3 iperf3_client.py
     def terminate_test(self):
         """ (v) Properly terminate the test following iperf3 semantics. """
@@ -149,7 +148,8 @@ class Iperf3Client:
             state = self.control_socket.recv(1)
             while state and state != b'\x0d': 
                 state = self.control_socket.recv(1)
-                
+            
+            # send the client-side statistics that the server expects.
             client_stats = {
                 "cpu_util_total": 1.0,
                 "cpu_util_user": 0.5,
@@ -162,12 +162,14 @@ class Iperf3Client:
             payload = struct.pack('>I', len(json_str)) + json_str
             self.control_socket.sendall(payload)
             
+            # Receive the server's statistics
             self.control_socket.recv(4096)
             
             state = self.control_socket.recv(1)
             while state and state != b'\x0e':
                 state = self.control_socket.recv(1)
             
+            # Acknowledge to the server that we are completely finished
             self.control_socket.sendall(b'\x0f')
             
         except socket.timeout:
