@@ -5,18 +5,18 @@ import random
 import string
 import struct
 import argparse
-import matplotlib.pyplot as plt
-import numpy as np
 import csv
-import graph_generator
 
 TCP_INFO = 11
 
 class Iperf3Client:
-    def __init__(self, server_ip, server_port=5201, duration=60):
+    def __init__(self, server_ip, server_port=5201, duration=60, cc_algo=None, sample_interval=0.2, timeout=5.0):
         self.server_ip = server_ip
         self.server_port = server_port
         self.duration = duration
+        self.cc_algo = cc_algo
+        self.sample_interval = sample_interval
+        self.timeout = timeout
         
         self.control_socket = None
         self.data_socket = None
@@ -29,13 +29,20 @@ class Iperf3Client:
         cookie = ''.join(random.choice(chars) for _ in range(36))
         return cookie
 
+    def _make_tcp_socket(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(self.timeout)
+        tcp_congestion = getattr(socket, "TCP_CONGESTION", None)
+        if self.cc_algo and tcp_congestion is not None:
+            sock.setsockopt(socket.IPPROTO_TCP, tcp_congestion, self.cc_algo.encode("ascii"))
+        return sock
+
     def open_control_connection(self):
         """ (i) Establish the control connection. """
         print(f"[*] Attempting to connect to {self.server_ip} on port {self.server_port}...")
         
         # Create a standard IPv4 (AF_INET) TCP (SOCK_STREAM) socket
-        self.control_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.control_socket.settimeout(5.0) 
+        self.control_socket = self._make_tcp_socket()
         self.control_socket.connect((self.server_ip, self.server_port))
         
         print(f"[+] Successfully connected to {self.server_ip}")
@@ -65,7 +72,7 @@ class Iperf3Client:
 
     def open_data_connection(self):
         """ (iii) Open the data connection. """
-        self.data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.data_socket = self._make_tcp_socket()
         self.data_socket.connect((self.server_ip, self.server_port))
         
         self.data_socket.sendall(self.cookie.encode('ascii') + b'\0') # send cookie
@@ -88,7 +95,7 @@ class Iperf3Client:
                 interval = current_time - last_check_time
                 elapsed_test_time = current_time - start_time
                 
-                if interval >= 0.2:
+                if interval >= self.sample_interval:
                     try:
                         # talk to linux kernel, requests the tcp_info state machine, 128 buffer to catch answer
                         tcp_info_data = self.data_socket.getsockopt(socket.IPPROTO_TCP, TCP_INFO, 128)
@@ -155,7 +162,7 @@ class Iperf3Client:
                 "cpu_util_user": 0.5,
                 "cpu_util_system": 0.5,
                 "sender_has_retransmits": 0,
-                "congestion_used": "cubic",
+                "congestion_used": self.cc_algo or "cubic",
                 "streams": [{"id": 1, "bytes": 0, "retransmits": 0, "jitter": 0, "errors": 0, "omitted_errors": 0, "packets": 0, "omitted_packets": 0, "start_time": 0, "end_time": self.duration}]
             }
             json_str = json.dumps(client_stats).encode('ascii')
@@ -198,6 +205,8 @@ class Iperf3Client:
 # python3 run_experiments.py -n 5 -t 15
 # docker run --rm --network host -v $(pwd):/app cs536-assign2 -n 1 -t 30
 def run_iperf_tests(num_servers, duration):
+    import graph_generator
+
     public_servers = []
     
     # extract servers from csv
