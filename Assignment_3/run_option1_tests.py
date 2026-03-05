@@ -106,6 +106,45 @@ def summarize_throughput(samples: List[Sample]) -> Dict[str, float]:
     }
 
 
+def write_algo_comparison_csv(path: Path, all_results: Dict[str, List[Dict[str, float | int | str]]]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "algo",
+                "successful_runs",
+                "failed_runs",
+                "avg_mean_mbps",
+                "avg_median_mbps",
+                "avg_rtt_ms",
+                "total_loss_events",
+            ]
+        )
+
+        for algo, runs in all_results.items():
+            successful = [r for r in runs if r.get("status") == "ok"]
+            failed = [r for r in runs if r.get("status") != "ok"]
+
+            if successful:
+                avg_mean_mbps = statistics.mean(float(r["mean_mbps"]) for r in successful)
+                avg_median_mbps = statistics.mean(float(r["median_mbps"]) for r in successful)
+                avg_rtt_ms = statistics.mean(float(r["avg_rtt_ms"]) for r in successful)
+                total_loss_events = sum(float(r["total_loss_events"]) for r in successful)
+                writer.writerow(
+                    [
+                        algo,
+                        len(successful),
+                        len(failed),
+                        f"{avg_mean_mbps:.3f}",
+                        f"{avg_median_mbps:.3f}",
+                        f"{avg_rtt_ms:.3f}",
+                        f"{total_loss_events:.0f}",
+                    ]
+                )
+            else:
+                writer.writerow([algo, 0, len(failed), "", "", "", ""])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Assignment 3 Option 1 test runner")
     parser.add_argument("--server", required=True, help="iPerf3 server hostname or IP")
@@ -124,7 +163,21 @@ def main() -> None:
     output_dir = THIS_DIR / args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    all_results: Dict[str, List[Dict[str, float | int | str]]] = {algo: [] for algo in args.algos}
+    summary_path = output_dir / "summary.json"
+    all_results: Dict[str, List[Dict[str, float | int | str]]] = {}
+    if summary_path.exists():
+        try:
+            with summary_path.open("r", encoding="utf-8") as f:
+                existing = json.load(f)
+            if isinstance(existing, dict):
+                for key, value in existing.items():
+                    if isinstance(value, list):
+                        all_results[key] = value
+        except Exception:
+            all_results = {}
+
+    for algo in args.algos:
+        all_results.setdefault(algo, [])
 
     for algo in args.algos:
         print(f"\n=== Testing {algo} ===")
@@ -161,9 +214,11 @@ def main() -> None:
                 f"median={run_summary['median_mbps']:.2f} Mbps"
             )
 
-    summary_path = output_dir / "summary.json"
     with summary_path.open("w", encoding="utf-8") as f:
         json.dump(all_results, f, indent=2)
+
+    comparison_path = output_dir / "algo_comparison.csv"
+    write_algo_comparison_csv(comparison_path, all_results)
 
     print("\n=== Aggregate comparison (mean of successful runs) ===")
     for algo, runs in all_results.items():
@@ -174,6 +229,7 @@ def main() -> None:
             print(f"{algo:>8}: no successful runs")
 
     print(f"\nSaved per-run CSV files and summary to: {output_dir}")
+    print(f"Saved algorithm comparison to: {comparison_path}")
 
 
 if __name__ == "__main__":
