@@ -1,4 +1,4 @@
-obj-m += tcp_dummycc.o
+obj-m += tcp_our_cc.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)

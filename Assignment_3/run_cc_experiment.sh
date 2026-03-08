@@ -2,11 +2,12 @@
 set -euo pipefail
 
 # Usage: ./run_cc_experiment.sh [cc_algo] [server_count_or_txt] [runs_per_server]
-ALGO="${1:-dummycc}"
+ALGO="${1:-our_cc}"
 TARGET_SPEC="${2:-5}"
 RUNS="${3:-2}"
 DURATION=10
 DEFAULT_PORT=5201
+DELAY_BETWEEN_RUNS=2
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CSV_PATH="$SCRIPT_DIR/../Assignment_2/iperf3serverlist.csv"
@@ -15,10 +16,10 @@ OUTPUT_ROOT="results_${ALGO}_batch_$(date +%Y%m%d_%H%M%S)"
 LOADED_BY_SCRIPT=0
 
 case "$ALGO" in
-  dummycc|cubic|reno|all)
+  our_cc|cubic|reno|all)
     ;;
   *)
-    echo "Error: cc_algo must be one of: dummycc, cubic, reno, all"
+    echo "Error: cc_algo must be one of: our_cc, cubic, reno, all"
     exit 1
     ;;
 esac
@@ -32,7 +33,7 @@ cleanup() {
   if [[ "$LOADED_BY_SCRIPT" -eq 1 ]]; then
     local unloaded=0
     for _ in {1..5}; do
-      if sudo rmmod tcp_dummycc 2>/dev/null; then
+      if sudo rmmod tcp_our_cc 2>/dev/null; then
         unloaded=1
         break
       fi
@@ -40,16 +41,16 @@ cleanup() {
     done
 
     if [[ "$unloaded" -eq 0 ]]; then
-      echo "Warning: tcp_dummycc is still in use; unload it later with: sudo rmmod tcp_dummycc"
+      echo "Warning: tcp_our_cc is still in use; unload it later with: sudo rmmod tcp_our_cc"
     fi
   fi
 }
 trap cleanup EXIT
 
-unload_dummycc_with_retry() {
+unload_our_cc_with_retry() {
   local unloaded=0
   for _ in {1..20}; do
-    if sudo rmmod tcp_dummycc 2>/dev/null; then
+    if sudo rmmod tcp_our_cc 2>/dev/null; then
       unloaded=1
       break
     fi
@@ -65,10 +66,10 @@ unload_dummycc_with_retry() {
 
 cd "$SCRIPT_DIR"
 
-if [[ "$ALGO" == "dummycc" || "$ALGO" == "all" ]]; then
+if [[ "$ALGO" == "our_cc" || "$ALGO" == "all" ]]; then
   make
-  if ! lsmod | awk '{print $1}' | grep -qx tcp_dummycc; then
-    sudo insmod tcp_dummycc.ko
+  if ! lsmod | awk '{print $1}' | grep -qx tcp_our_cc; then
+    sudo insmod tcp_our_cc.ko
     LOADED_BY_SCRIPT=1
   fi
 fi
@@ -76,7 +77,7 @@ fi
 ALLOWED="$(sysctl -n net.ipv4.tcp_allowed_congestion_control)"
 
 if [[ "$ALGO" == "all" ]]; then
-  for cc in dummycc cubic reno; do
+  for cc in our_cc cubic reno; do
     if [[ " $ALLOWED " != *" ${cc} "* ]]; then
       ALLOWED="${ALLOWED} ${cc}"
     fi
@@ -159,32 +160,34 @@ fi
 mkdir -p "$SCRIPT_DIR/$RESULTS_BASE_DIR/$OUTPUT_ROOT"
 
 if [[ "$ALGO" == "all" ]]; then
-  echo "Selected ${#TARGETS[@]} targets. Running $RUNS runs/target with dummycc, then unloading, then cubic+reno..."
-
   for target in "${TARGETS[@]}"; do
     IFS=',' read -r SERVER SERVER_PORT <<< "$target"
     SAFE_SERVER_NAME="${SERVER//./_}"
     SAFE_SERVER_NAME="${SAFE_SERVER_NAME//:/_}"
     SERVER_OUTPUT_DIR="$RESULTS_BASE_DIR/$OUTPUT_ROOT/$SAFE_SERVER_NAME"
 
-    printf "\n=== Target (phase 1 dummycc): %s:%s ===\n" "$SERVER" "$SERVER_PORT"
+    echo "IP $SERVER:$SERVER_PORT | CC our_cc"
     python3 "$SCRIPT_DIR/run_option1_tests.py" \
       --server "$SERVER" \
       --port "$SERVER_PORT" \
       --duration "$DURATION" \
       --runs "$RUNS" \
-      --algos dummycc \
+      --delay-between-runs "$DELAY_BETWEEN_RUNS" \
+      --algos our_cc \
       --output-dir "$SERVER_OUTPUT_DIR"
   done
 
-  if lsmod | awk '{print $1}' | grep -qx tcp_dummycc; then
-    echo "Unloading tcp_dummycc before running cubic/reno (with retry)..."
-    if ! unload_dummycc_with_retry; then
-      echo "Error: failed to unload tcp_dummycc before cubic/reno runs."
-      exit 1
+  if lsmod | awk '{print $1}' | grep -qx tcp_our_cc; then
+    echo "Unloading tcp_our_cc before running cubic/reno..."
+    if ! unload_our_cc_with_retry; then
+      echo "Warning: failed to unload tcp_our_cc before cubic/reno runs; continuing."
+      echo "Warning: will retry unload during cleanup at script exit."
+    else
+      LOADED_BY_SCRIPT=0
     fi
-    LOADED_BY_SCRIPT=0
   fi
+
+  sleep 2
 
   for target in "${TARGETS[@]}"; do
     IFS=',' read -r SERVER SERVER_PORT <<< "$target"
@@ -192,32 +195,60 @@ if [[ "$ALGO" == "all" ]]; then
     SAFE_SERVER_NAME="${SAFE_SERVER_NAME//:/_}"
     SERVER_OUTPUT_DIR="$RESULTS_BASE_DIR/$OUTPUT_ROOT/$SAFE_SERVER_NAME"
 
-    printf "\n=== Target (phase 2 cubic+reno): %s:%s ===\n" "$SERVER" "$SERVER_PORT"
+    echo "IP $SERVER:$SERVER_PORT | CC cubic"
+    echo "IP $SERVER:$SERVER_PORT | CC reno"
     python3 "$SCRIPT_DIR/run_option1_tests.py" \
       --server "$SERVER" \
       --port "$SERVER_PORT" \
       --duration "$DURATION" \
       --runs "$RUNS" \
+      --delay-between-runs "$DELAY_BETWEEN_RUNS" \
       --algos cubic reno \
       --output-dir "$SERVER_OUTPUT_DIR"
   done
 else
-  echo "Selected ${#TARGETS[@]} targets. Running $RUNS runs/target with ${ALGO}..."
   for target in "${TARGETS[@]}"; do
     IFS=',' read -r SERVER SERVER_PORT <<< "$target"
     SAFE_SERVER_NAME="${SERVER//./_}"
     SAFE_SERVER_NAME="${SAFE_SERVER_NAME//:/_}"
     SERVER_OUTPUT_DIR="$RESULTS_BASE_DIR/$OUTPUT_ROOT/$SAFE_SERVER_NAME"
 
-    printf "\n=== Target: %s:%s ===\n" "$SERVER" "$SERVER_PORT"
+    echo "IP $SERVER:$SERVER_PORT | CC $ALGO"
     python3 "$SCRIPT_DIR/run_option1_tests.py" \
       --server "$SERVER" \
       --port "$SERVER_PORT" \
       --duration "$DURATION" \
       --runs "$RUNS" \
+      --delay-between-runs "$DELAY_BETWEEN_RUNS" \
       --algos "$ALGO" \
       --output-dir "$SERVER_OUTPUT_DIR"
   done
 fi
 
-printf "\nBatch complete. Results saved in: %s/%s/%s\n" "$SCRIPT_DIR" "$RESULTS_BASE_DIR" "$OUTPUT_ROOT"
+echo
+echo "Summary:"
+if [[ "$ALGO" == "all" ]]; then
+  SUMMARY_ALGOS=(our_cc cubic reno)
+else
+  SUMMARY_ALGOS=("$ALGO")
+fi
+
+for target in "${TARGETS[@]}"; do
+  IFS=',' read -r SERVER SERVER_PORT <<< "$target"
+  SAFE_SERVER_NAME="${SERVER//./_}"
+  SAFE_SERVER_NAME="${SAFE_SERVER_NAME//:/_}"
+  SERVER_OUTPUT_DIR="$SCRIPT_DIR/$RESULTS_BASE_DIR/$OUTPUT_ROOT/$SAFE_SERVER_NAME"
+
+  summary_line="IP $SERVER:$SERVER_PORT"
+  for cc in "${SUMMARY_ALGOS[@]}"; do
+    success_count=0
+    if [[ -d "$SERVER_OUTPUT_DIR" ]]; then
+      success_count=$(find "$SERVER_OUTPUT_DIR" -maxdepth 1 -type f -name "${cc}_run*.csv" | wc -l)
+      success_count="$(echo "$success_count" | xargs)"
+    fi
+    summary_line="$summary_line | $cc ${success_count}/${RUNS}"
+  done
+  echo "$summary_line"
+done
+
+printf "Results saved in: %s/%s/%s\n" "$SCRIPT_DIR" "$RESULTS_BASE_DIR" "$OUTPUT_ROOT"

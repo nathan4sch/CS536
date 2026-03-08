@@ -11,7 +11,7 @@
 ## How to run
 
 The main script to run is `run_cc_experiment.sh`.
-- The 1st argument is the cc algorithm to use. The options are ["dummycc", "cubic", "reno", "all"].
+- The 1st argument is the cc algorithm to use. The options are ["our_cc", "cubic", "reno", "all"].
 - The 2nd argument is the number of random servers to run on OR a text file containing a list of servers to run on
 - The 3rd argument is the number of runs per server.
 - This script sets up everything including the necessary environment stuff on my Ubuntu 24 laptop.
@@ -26,12 +26,12 @@ Various statistics for each run by each algorithm at time intervals are saved in
 
 ## How it knows what congestion control algorithm to use
 
-When the code is ran with dummycc (a basic AI generated congested control algorithm, this is a placeholder for the one we make in part 2), we use `sudo insmod tcp_dummycc.ko` to register it into the kernal. This `.ko` file is generated from the related C `tcp_dummyycc.c` file where the actual algorithm is written in C. 
+When the code is ran with our_cc, we use `sudo insmod tcp_our_cc.ko` to register it into the kernal. This `.ko` file is generated from the related C `tcp_our_cc.c` file where the actual algorithm is written in C.
 For cubic/reno, the `net.ipv4.tcp_allowed_congestion_control` variable is updated to specify that algorithm.
 
 In the actual code, in `iperf3_client.py` from `Assignment_2` `_make_tcp_socket()` is used with the algorithm as an option, which is passed in from the script calling it. cubic/reno use built-in kernel stuff so we do not have to do anything except specify with the string name in the function call.
 
-When we are done using dummycc, `sudo rmmod tcp_dummycc` is used to unload it from the kernel.
+When we are done using our_cc, `sudo rmmod tcp_our_cc` is used to unload it from the kernel.
 
 ## Using the socket program from Assignment 2
 
