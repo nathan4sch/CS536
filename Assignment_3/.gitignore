@@ -20,8 +20,6 @@ modules.order
 .tmp_versions/
 
 # Generated results/logs
-Results/
-results_*/
 *.log
 
 # Editor/OS noise
