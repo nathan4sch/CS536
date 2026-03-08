@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: ./run_cc_experiment.sh [cc_algo] [server_count_or_txt] [runs_per_server]
+# Usage: ./run_cc_experiment.sh [cc_algo] [server_count_or_txt]
 ALGO="${1:-our_cc}"
 TARGET_SPEC="${2:-5}"
-RUNS="${3:-2}"
+RUNS=1
 DURATION=10
 DEFAULT_PORT=5201
-DELAY_BETWEEN_RUNS=2
+DELAY_BETWEEN_RUNS=10
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CSV_PATH="$SCRIPT_DIR/../Assignment_2/iperf3serverlist.csv"
@@ -23,11 +23,6 @@ case "$ALGO" in
     exit 1
     ;;
 esac
-
-if ! [[ "$RUNS" =~ ^[0-9]+$ ]] || [[ "$RUNS" -lt 1 ]]; then
-  echo "Error: runs_per_server must be a positive integer"
-  exit 1
-fi
 
 cleanup() {
   if [[ "$LOADED_BY_SCRIPT" -eq 1 ]]; then
@@ -225,6 +220,28 @@ else
   done
 fi
 
+if [[ "$ALGO" == "all" ]]; then
+  for target in "${TARGETS[@]}"; do
+    IFS=',' read -r SERVER SERVER_PORT <<< "$target"
+    SAFE_SERVER_NAME="${SERVER//./_}"
+    SAFE_SERVER_NAME="${SAFE_SERVER_NAME//:/_}"
+    SERVER_OUTPUT_DIR="$SCRIPT_DIR/$RESULTS_BASE_DIR/$OUTPUT_ROOT/$SAFE_SERVER_NAME"
+    SUCCESS_DIR="${SERVER_OUTPUT_DIR}_SUCCESS"
+
+    if [[ -d "$SERVER_OUTPUT_DIR" ]]; then
+      our_cc_success=$(find "$SERVER_OUTPUT_DIR" -maxdepth 1 -type f -name "our_cc_run*.csv" | wc -l | xargs)
+      cubic_success=$(find "$SERVER_OUTPUT_DIR" -maxdepth 1 -type f -name "cubic_run*.csv" | wc -l | xargs)
+      reno_success=$(find "$SERVER_OUTPUT_DIR" -maxdepth 1 -type f -name "reno_run*.csv" | wc -l | xargs)
+
+      if [[ "$our_cc_success" -eq "$RUNS" && "$cubic_success" -eq "$RUNS" && "$reno_success" -eq "$RUNS" ]]; then
+        if [[ ! -d "$SUCCESS_DIR" ]]; then
+          mv "$SERVER_OUTPUT_DIR" "$SUCCESS_DIR"
+        fi
+      fi
+    fi
+  done
+fi
+
 echo
 echo "Summary:"
 if [[ "$ALGO" == "all" ]]; then
@@ -238,6 +255,9 @@ for target in "${TARGETS[@]}"; do
   SAFE_SERVER_NAME="${SERVER//./_}"
   SAFE_SERVER_NAME="${SAFE_SERVER_NAME//:/_}"
   SERVER_OUTPUT_DIR="$SCRIPT_DIR/$RESULTS_BASE_DIR/$OUTPUT_ROOT/$SAFE_SERVER_NAME"
+  if [[ -d "${SERVER_OUTPUT_DIR}_SUCCESS" ]]; then
+    SERVER_OUTPUT_DIR="${SERVER_OUTPUT_DIR}_SUCCESS"
+  fi
 
   summary_line="IP $SERVER:$SERVER_PORT"
   for cc in "${SUMMARY_ALGOS[@]}"; do

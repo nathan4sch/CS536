@@ -16,7 +16,7 @@ ASSIGNMENT2_DIR = THIS_DIR.parent / "Assignment_2"
 if str(ASSIGNMENT2_DIR) not in sys.path:
     sys.path.insert(0, str(ASSIGNMENT2_DIR))
 
-from iperf3_client import Iperf3Client  # noqa: E402
+from iperf3_client import Iperf3Client
 
 
 @dataclass
@@ -233,8 +233,8 @@ def main() -> None:
     parser.add_argument("--server", required=True, help="iPerf3 server hostname or IP")
     parser.add_argument("--port", type=int, default=5201, help="iPerf3 server port")
     parser.add_argument("--duration", type=int, default=10, help="Duration (seconds) per run")
-    parser.add_argument("--runs", type=int, default=3, help="Runs per congestion-control algorithm")
-    parser.add_argument("--delay-between-runs", type=float, default=2.0, help="Sleep between runs (seconds)")
+    parser.add_argument("--runs", type=int, default=1, help="Runs per congestion-control algorithm")
+    parser.add_argument("--delay-between-runs", type=float, default=10.0, help="Sleep between runs (seconds)")
     parser.add_argument(
         "--algos",
         nargs="+",
