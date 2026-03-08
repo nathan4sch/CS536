@@ -68,13 +68,7 @@ class PolicyNet(nn.Module):
 
         super().__init__()
 
-        self.net = nn.Sequential(
-            nn.Linear(input_dim,1),
-            # nn.ReLU(),
-            # nn.Linear(64,64),
-            # nn.ReLU(),
-            # nn.Linear(64,1)
-        )
+        self.net = nn.Linear(input_dim,1),
 
     def forward(self,x):
         return self.net(x)
