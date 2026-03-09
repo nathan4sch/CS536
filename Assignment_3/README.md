@@ -1,12 +1,10 @@
 # MY README
 
 ## TODO
-- Implement the actual congestion control algorithm
-- Actually generate the right performance results. I don't know if the stuff generated in Reports/ now is actually what we want
-    - Specifically what does it mean by loss values??
 - Verify that our code does what it claims to do
+    - Specifically, make sure we are calculating the results correctly
 - Write code to generate some plots of this stuff. We need to compare throughput values in one at least.
-- Make sure my changes to `iperf3_client.py` did not break anything from Assignment 2
+    - Reference the plots in our Assignment 2 report
 
 ## How to run
 
