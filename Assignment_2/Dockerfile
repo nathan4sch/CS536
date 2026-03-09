@@ -26,8 +26,7 @@ RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 # 3. NOW copy your local codebase into the container
 COPY . /app/
 
-# Lock the container to always execute your master script 
-ENTRYPOINT ["python3", "-u", "run_experiments.py"]
+RUN chmod +x /app/run_all.sh
 
-# default args
-CMD ["-n", "10", "-t", "15"]
+ENTRYPOINT ["/app/run_all.sh"]
+CMD ["-n", "10", "-t", "15", "-f", "tcp_metrics_train.json"]

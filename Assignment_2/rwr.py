@@ -68,7 +68,7 @@ class PolicyNet(nn.Module):
 
         super().__init__()
 
-        self.net = nn.Linear(input_dim,1),
+        self.net = nn.Linear(input_dim,1)
 
     def forward(self,x):
         return self.net(x)
@@ -169,7 +169,7 @@ def train_rwr(policy,train_loader,val_loader):
 
                 pred = policy(states)
 
-                loss = (weights.unsqueeze(1)*(pred-actions)**2).mean()
+                loss = (weights.unsqueeze(1)*(pred-actions)**2).mean() # this is rlly the key line
 
                 val_loss += loss.item()
 
@@ -216,16 +216,15 @@ def predict(policy,states,scaler):
 # Plot Destination
 # ==============================
 
-def plot_destination(trace, policy, state_scaler, action_scaler, destination_name, plot_all=False):
+def plot_destination(trace, policy, state_scaler, action_scaler, destination_name):
     states, actions, rewards, cwnds = build_dataset(trace)
     if len(states) == 0:
         return
 
     n = len(states)
-    train_split = int(TRAIN_RATIO * n)
     val_split = int((TRAIN_RATIO + VAL_RATIO) * n)
 
-    # Scale states and predict
+    # 1. Scale states and predict Delta CWND
     states_norm = state_scaler.transform(states)
     states_tensor = torch.tensor(states_norm, dtype=torch.float32).to(DEVICE)
     policy.eval()
@@ -235,7 +234,12 @@ def plot_destination(trace, policy, state_scaler, action_scaler, destination_nam
     # Inverse transform to get actual Delta cwnd
     pred_delta = action_scaler.inverse_transform(pred_delta_norm).flatten()
 
-    # Calculate cumulative rollout starting exactly at the validation split
+    # 2. Calculate 1-step prediction (CWND_t + Delta_pred)
+    # This shows how the model performs given the ground truth state at every step
+    pred_cwnd_1step = cwnds + pred_delta
+
+    # 3. Calculate Cumulative Rollout (starting from the Val/Test split)
+    # This shows the open-loop trajectory of your policy
     pred_cwnd_rollout = np.copy(cwnds)
     c = cwnds[val_split - 1] if val_split > 0 else cwnds[0]
     
@@ -243,25 +247,28 @@ def plot_destination(trace, policy, state_scaler, action_scaler, destination_nam
         c = c + pred_delta[i]
         pred_cwnd_rollout[i] = c
 
-    plt.figure(figsize=(10, 5))
+    # 4. Create vertically stacked plots
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
 
-    if plot_all:
-        # 1-step prediction (helps visualize model accuracy without drift)
-        pred_cwnd_1step = cwnds + pred_delta
-        plt.plot(cwnds, label="True CWND")
-        plt.plot(pred_cwnd_1step, label="1-Step Predicted CWND", alpha=0.7)
-        plt.axvline(val_split, color="red", linestyle="--", label="Val/Test Split")
-    else:
-        # Cumulative rollout (Open-loop prediction from test split)
-        test_idx = range(val_split, n)
-        plt.plot(test_idx, cwnds[val_split:], label="True CWND")
-        plt.plot(test_idx, pred_cwnd_rollout[val_split:], label="Predicted CWND (Rollout)")
-    
-    plt.title(destination_name)
-    plt.legend()
-    plt.xlabel("Time Step")
-    plt.ylabel("Congestion Window Size")
-    plt.savefig(f"part3/{destination_name}.png")
+    # Top Plot: 1-Step Prediction (Train, Val, and Test)
+    ax1.plot(cwnds, label="True CWND", color="tab:blue", alpha=0.8)
+    ax1.plot(pred_cwnd_1step, label="1-Step Predicted CWND", color="tab:orange", linestyle="--", alpha=0.7)
+    ax1.axvline(val_split, color="red", linestyle="-.", label="Test Split Start")
+    ax1.set_ylabel("CWND Size")
+    ax1.set_title(f"Destination: {destination_name} - 1-Step Prediction")
+    ax1.legend()
+
+    # Bottom Plot: Cumulative Rollout (Focusing on the Test Split)
+    test_idx = np.arange(val_split, n)
+    ax2.plot(test_idx, cwnds[val_split:], label="True CWND", color="tab:blue")
+    ax2.plot(test_idx, pred_cwnd_rollout[val_split:], label="Cumulative Rollout", color="tab:green", linewidth=2)
+    ax2.set_ylabel("CWND Size")
+    ax2.set_xlabel("Time Step")
+    ax2.set_title("Test Horizon: Cumulative Policy Rollout")
+    ax2.legend()
+
+    plt.tight_layout()
+    plt.savefig(f"part3/{destination_name}_combined.png")
     plt.close()
 
 # ==============================
@@ -269,8 +276,15 @@ def plot_destination(trace, policy, state_scaler, action_scaler, destination_nam
 # ==============================
 
 if __name__ == "__main__":
+    import argparse
 
-    with open("tcp_metrics.json","r") as f:
+    parser = argparse.ArgumentParser(description="Train RWR model")
+    parser.add_argument("-f", "--file",
+                        default="tcp_metrics_train.json",
+                        help="Path to training JSON file")
+    args = parser.parse_args()
+
+    with open(args.file, "r") as f:
         data = json.load(f)
 
     train_states, train_actions, train_rewards = [], [], []
@@ -310,7 +324,7 @@ if __name__ == "__main__":
     train_states_norm = state_scaler.fit_transform(train_states)
     val_states_norm = state_scaler.transform(val_states)
 
-    # Scale Actions (Crucial!)
+    # Scale Actions
     action_scaler = StandardScaler()
     train_actions_norm = action_scaler.fit_transform(train_actions).flatten()
     val_actions_norm = action_scaler.transform(val_actions).flatten()
@@ -326,5 +340,5 @@ if __name__ == "__main__":
     train_rwr(policy, train_loader, val_loader)
 
     print("Generating plots...")
-    for i, (dest, trace) in enumerate(destination_traces[:6]):
-        plot_destination(trace, policy, state_scaler, action_scaler, dest, plot_all=(i==0))
+    for i, (dest, trace) in enumerate(destination_traces):
+        plot_destination(trace, policy, state_scaler, action_scaler, dest)
