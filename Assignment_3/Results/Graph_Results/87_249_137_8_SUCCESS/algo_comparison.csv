@@ -1,0 +1,4 @@
+algo,successful_runs,failed_runs,min_goodput_mbps,median_goodput_mbps,avg_goodput_mbps,p95_goodput_mbps,avg_rtt_ms,avg_retransmits,total_retransmits,avg_cwnd
+cubic,1,0,1.38,88.40,80.66,107.50,129.34,0.00,0,1370.15
+our_cc,1,0,1.17,105.86,94.16,128.40,185.52,0.02,1,10477.42
+reno,1,0,1.25,101.35,91.49,129.59,160.11,0.00,0,3571.04

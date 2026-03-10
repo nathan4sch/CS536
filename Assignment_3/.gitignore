@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Kernel module build artifacts
+*.ko
+*.o
+*.mod
+*.mod.c
+*.mod.o
+Module.symvers
+modules.order
+*.order
+*.symvers
+.*.cmd
+.tmp_versions/
+
+# Generated results/logs
+*.log
+
+# Editor/OS noise
+*~
+.DS_Store
