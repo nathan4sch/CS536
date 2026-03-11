@@ -16,7 +16,7 @@ Results are saved in .csv under the created `Results/` directory.
 
 Various statistics for each run by each algorithm at time intervals are saved in csv files. When all are ran, there is also a comparison csv file created.
 
-To visualize the differences between algorithms, change the file path on line 7 of Assignment_3/Generate_Plots/GeneratePlots.py and run the file. The graphs will be saved to Assignment_3/Generate_Plots/Plots.
+To visualize the differences between algorithms, change the file path on line 7 of `Assignment_3/Generate_Plots/GeneratePlots.py` and run the file. The graphs will be saved to `Assignment_3/Generate_Plots/Plots`.
 
 ## How it knows what congestion control algorithm to use
 
