@@ -37,9 +37,9 @@ MESSAGE_SIZES_BYTES = [
     1048576,
     4194304,
     8388608,
-    16777216,
-    33554432,
-    67108864,
+    #16777216,
+    #33554432,
+    #67108864,
 ]
 # The assignment asks us to reach at least 8 ranks. Higher counts are optional
 # and can make local Docker runs feel stalled on limited CPUs.
@@ -77,7 +77,6 @@ def get_allgather_algorithm(name: str):
         from algorithms.allgather_swing import allgather_swing
 
         return allgather_swing
-    raise ValueError(f"Unsupported AllGather algorithm: {name}")
 
 
 def parse_worker_result(stdout: str) -> dict:
@@ -140,26 +139,19 @@ def run_worker(args: argparse.Namespace) -> None:
         ##### warmup to fill the cache and such #####
 
 
-        local_timings_ms = []
+        timings_ms = []
         for _ in range(args.timed_iterations):
             dist.barrier()
             start_time = time.perf_counter()
             algorithm(input_tensor, output_buffer)
             elapsed_seconds = time.perf_counter() - start_time
 
-            # Record only the algorithm time. We'll compute the slowest rank's
-            # time after the loop so the timing itself does not include an
-            # additional collective.
-            local_timings_ms.append(elapsed_seconds * 1000.0)
-
-        gathered_timings = [None for _ in range(world_size)]
-        dist.all_gather_object(gathered_timings, local_timings_ms)
+            # Get MAX time across all ranks (slowest rank determines actual time)
+            elapsed_tensor = torch.tensor(elapsed_seconds, dtype=torch.float64)
+            dist.all_reduce(elapsed_tensor, op=dist.ReduceOp.MAX)
+            timings_ms.append(elapsed_tensor.item() * 1000.0)
 
         if rank == 0:
-            timings_ms = [
-                max(rank_timings[iteration] for rank_timings in gathered_timings)
-                for iteration in range(args.timed_iterations)
-            ]
             result = {
                 "algorithm": args.algorithm,
                 "world_size": world_size,

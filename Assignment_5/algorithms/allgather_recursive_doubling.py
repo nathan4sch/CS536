@@ -46,7 +46,7 @@ def allgather_recursive_doubling(
         send_end = send_start + block_size
         recv_end = recv_start + block_size
 
-        send_buffer = chunks[send_start:send_end].reshape(-1)
+        send_buffer = chunks[send_start:send_end].contiguous().view(-1)
         recv_buffer = chunks[recv_start:recv_end].view(-1)
         requests = dist.batch_isend_irecv(
             [

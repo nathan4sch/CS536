@@ -21,39 +21,10 @@ def _swing_peer(rank: int, step: int, world_size: int) -> int:
     return (rank - offset) % world_size
 
 
-def _pack_blocks(chunks: torch.Tensor, block_indices: torch.Tensor) -> torch.Tensor:
+def _pack_blocks(chunks: torch.Tensor, block_indices: tuple[int, ...]) -> torch.Tensor:
     """Collect the selected blocks into one contiguous send buffer."""
-    return chunks.index_select(0, block_indices).reshape(-1)
-
-
-@lru_cache(maxsize=None)
-def _swing_plan(
-    rank: int, world_size: int
-) -> tuple[tuple[int, torch.Tensor, tuple[int, ...]], ...]:
-    """Precompute the peer schedule and block selections for a rank."""
-    if world_size & (world_size - 1):
-        raise ValueError("Swing AllGather requires a power-of-two world size.")
-
-    total_steps = world_size.bit_length() - 1
-
-    @lru_cache(maxsize=None)
-    def gathered_blocks(node_rank: int, completed_steps: int) -> tuple[int, ...]:
-        if completed_steps == 0:
-            return (node_rank,)
-
-        previous_blocks = gathered_blocks(node_rank, completed_steps - 1)
-        peer = _swing_peer(node_rank, total_steps - completed_steps, world_size)
-        peer_blocks = gathered_blocks(peer, completed_steps - 1)
-        return previous_blocks + peer_blocks
-
-    plan = []
-    for step in range(total_steps):
-        peer = _swing_peer(rank, total_steps - 1 - step, world_size)
-        send_indices = gathered_blocks(rank, step)
-        recv_indices = gathered_blocks(peer, step)
-        send_index_tensor = torch.tensor(send_indices, dtype=torch.long)
-        plan.append((peer, send_index_tensor, recv_indices))
-    return tuple(plan)
+    packed = torch.stack([chunks[index] for index in block_indices], dim=0)
+    return packed.contiguous().view(-1)
 
 
 def allgather_swing(tensor: torch.Tensor, output_buffer: torch.Tensor, group=None):
@@ -78,8 +49,32 @@ def allgather_swing(tensor: torch.Tensor, output_buffer: torch.Tensor, group=Non
     if world_size == 1:
         return output_buffer
 
-    for step, (peer, send_index_tensor, recv_indices) in enumerate(_swing_plan(rank, world_size)):
-        send_buffer = _pack_blocks(chunks, send_index_tensor)
+    total_steps = world_size.bit_length() - 1
+
+    @lru_cache(maxsize=None)
+    def gathered_blocks(node_rank: int, completed_steps: int) -> tuple[int, ...]:
+        """Recursively describe which blocks a rank owns after some steps.
+
+        This mirrors the recursive block-selection idea from the lecture slides:
+        after each Swing step, a rank keeps the blocks it already had and adds
+        the blocks owned by its current peer.
+        """
+
+        if completed_steps == 0:
+            return (node_rank,)
+
+        previous_blocks = gathered_blocks(node_rank, completed_steps - 1)
+        peer = _swing_peer(node_rank, total_steps - completed_steps, world_size)
+        peer_blocks = gathered_blocks(peer, completed_steps - 1)
+        return previous_blocks + peer_blocks
+
+    for step in range(total_steps):
+        peer = _swing_peer(rank, total_steps - 1 - step, world_size)
+
+        send_indices = gathered_blocks(rank, step)
+        recv_indices = gathered_blocks(peer, step)
+
+        send_buffer = _pack_blocks(chunks, send_indices)
         recv_buffer = torch.empty(
             len(recv_indices) * local_chunk.numel(),
             dtype=local_chunk.dtype,
