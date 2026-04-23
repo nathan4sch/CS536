@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
 
 
@@ -59,10 +60,116 @@ def validate_allgather_output(output_buffer, message_size_bytes: int) -> bool:
     return True
 
 
+def build_broadcast_tensor(rank: int, source_rank: int, message_size_bytes: int):
+    """Create the per-rank input buffer used for Broadcast correctness checks."""
+    import torch
+
+    if rank == source_rank:
+        return build_input_tensor(source_rank, message_size_bytes)
+    return torch.empty(message_size_bytes, dtype=torch.uint8)
+
+
+def validate_broadcast_output(tensor, source_rank: int, message_size_bytes: int) -> bool:
+    """Verify that a Broadcast result matches the source-rank payload."""
+    import torch
+
+    expected = build_input_tensor(source_rank, message_size_bytes)
+    return tuple(tensor.shape) == (message_size_bytes,) and torch.equal(tensor, expected)
+
+
+def plot_message_size_results(
+    results: list[dict],
+    algorithms: list[str],
+    message_sizes_bytes: list[int],
+    fixed_rank: int,
+    collective_name: str,
+    output_path: Path,
+) -> None:
+    """Plot completion time against message size for a collective benchmark."""
+    import matplotlib.pyplot as plt
+
+    grouped = defaultdict(list)
+    for result in results:
+        grouped[result["algorithm"]].append(result)
+
+    figure, axis = plt.subplots(figsize=(10, 6))
+    for algorithm in algorithms:
+        points = sorted(grouped[algorithm], key=lambda item: item["message_size_bytes"])
+        axis.plot(
+            [point["message_size_bytes"] for point in points],
+            [point["average_time_ms"] for point in points],
+            marker="o",
+            linewidth=2,
+            label=pretty_algorithm_name(algorithm),
+        )
+
+    axis.set_xscale("log", base=2)
+    axis.set_xlabel("Message Size")
+    axis.set_ylabel("Completion Time (ms)")
+    axis.set_title(
+        f"{collective_name} Completion Time vs Message Size ({fixed_rank} ranks)"
+    )
+    axis.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
+    axis.legend()
+    axis.set_xticks(message_sizes_bytes)
+    axis.set_xticklabels(
+        [format_bytes(value) for value in message_sizes_bytes],
+        rotation=30,
+        ha="right",
+    )
+
+    figure.tight_layout()
+    figure.savefig(output_path, dpi=200)
+    plt.close(figure)
+
+
+def plot_rank_scaling_results(
+    results: list[dict],
+    algorithms: list[str],
+    rank_counts: list[int],
+    fixed_message_size_bytes: int,
+    collective_name: str,
+    output_path: Path,
+) -> None:
+    """Plot completion time against rank count for a collective benchmark."""
+    import matplotlib.pyplot as plt
+
+    grouped = defaultdict(list)
+    for result in results:
+        grouped[result["algorithm"]].append(result)
+
+    figure, axis = plt.subplots(figsize=(10, 6))
+    for algorithm in algorithms:
+        points = sorted(grouped[algorithm], key=lambda item: item["world_size"])
+        axis.plot(
+            [point["world_size"] for point in points],
+            [point["average_time_ms"] for point in points],
+            marker="o",
+            linewidth=2,
+            label=pretty_algorithm_name(algorithm),
+        )
+
+    axis.set_xlabel("Number of Ranks")
+    axis.set_ylabel("Completion Time (ms)")
+    axis.set_title(
+        f"{collective_name} Completion Time vs Number of Ranks "
+        f"({format_bytes(fixed_message_size_bytes)})"
+    )
+    axis.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
+    axis.legend()
+    axis.set_xticks(rank_counts)
+
+    figure.tight_layout()
+    figure.savefig(output_path, dpi=200)
+    plt.close(figure)
+
+
 def pretty_algorithm_name(name: str) -> str:
     """Convert internal identifiers into plot-friendly labels."""
     return {
         "ring": "Ring",
         "recursive_doubling": "Recursive Doubling",
         "swing": "Swing",
+        "binary_tree": "Binary Tree",
+        "binomial_tree": "Binomial Tree",
     }.get(name, name.replace("_", " ").title())

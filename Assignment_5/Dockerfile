@@ -20,6 +20,7 @@ RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 COPY . /app/
 
-RUN chmod +x /app/run_all.sh
+RUN sed -i 's/\r$//' /app/run_all.sh /app/run_broadcast.sh \
+    && chmod +x /app/run_all.sh /app/run_broadcast.sh
 
-ENTRYPOINT ["/app/run_all.sh"]
+ENTRYPOINT ["bash", "/app/run_all.sh"]

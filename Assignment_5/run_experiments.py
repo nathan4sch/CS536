@@ -9,7 +9,6 @@ import statistics
 import subprocess
 import sys
 import time
-from collections import defaultdict
 from pathlib import Path
 
 from benchmark_common import (
@@ -20,6 +19,8 @@ from benchmark_common import (
     ensure_directory,
     format_bytes,
     is_power_of_two,
+    plot_message_size_results,
+    plot_rank_scaling_results,
     pretty_algorithm_name,
     validate_allgather_output,
 )
@@ -216,76 +217,25 @@ def launch_worker(algorithm: str, message_size_bytes: int, world_size: int) -> d
 
 
 def plot_message_size_sweep(message_sweep_results: dict) -> None:
-    import matplotlib.pyplot as plt
-
-    grouped = defaultdict(list)
-    for result in message_sweep_results["results"]:
-        grouped[result["algorithm"]].append(result)
-
-    figure, axis = plt.subplots(figsize=(10, 6))
-    for algorithm in ALGORITHMS:
-        points = sorted(grouped[algorithm], key=lambda item: item["message_size_bytes"])
-        axis.plot(
-            [point["message_size_bytes"] for point in points],
-            [point["average_time_ms"] for point in points],
-            marker="o",
-            linewidth=2,
-            label=pretty_algorithm_name(algorithm),
-        )
-
-    axis.set_xscale("log", base=2)
-    axis.set_xlabel("Message Size")
-    axis.set_ylabel("Completion Time (ms)")
-    axis.set_title(
-        f"AllGather Completion Time vs Message Size "
-        f"({message_sweep_results['fixed_rank']} ranks)"
+    plot_message_size_results(
+        results=message_sweep_results["results"],
+        algorithms=ALGORITHMS,
+        message_sizes_bytes=MESSAGE_SIZES_BYTES,
+        fixed_rank=message_sweep_results["fixed_rank"],
+        collective_name="AllGather",
+        output_path=MESSAGE_SIZE_PLOT_PATH,
     )
-    axis.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
-    axis.legend()
-
-    axis.set_xticks(MESSAGE_SIZES_BYTES)
-    axis.set_xticklabels(
-        [format_bytes(value) for value in MESSAGE_SIZES_BYTES],
-        rotation=30,
-        ha="right",
-    )
-
-    figure.tight_layout()
-    figure.savefig(MESSAGE_SIZE_PLOT_PATH, dpi=200)
-    plt.close(figure)
 
 
 def plot_rank_scaling_sweep(rank_scaling_results: dict) -> None:
-    import matplotlib.pyplot as plt
-
-    grouped = defaultdict(list)
-    for result in rank_scaling_results["results"]:
-        grouped[result["algorithm"]].append(result)
-
-    figure, axis = plt.subplots(figsize=(10, 6))
-    for algorithm in ALGORITHMS:
-        points = sorted(grouped[algorithm], key=lambda item: item["world_size"])
-        axis.plot(
-            [point["world_size"] for point in points],
-            [point["average_time_ms"] for point in points],
-            marker="o",
-            linewidth=2,
-            label=pretty_algorithm_name(algorithm),
-        )
-
-    axis.set_xlabel("Number of Ranks")
-    axis.set_ylabel("Completion Time (ms)")
-    axis.set_title(
-        "AllGather Completion Time vs Number of Ranks "
-        f"({format_bytes(rank_scaling_results['fixed_message_size_bytes'])})"
+    plot_rank_scaling_results(
+        results=rank_scaling_results["results"],
+        algorithms=ALGORITHMS,
+        rank_counts=RANK_COUNTS,
+        fixed_message_size_bytes=rank_scaling_results["fixed_message_size_bytes"],
+        collective_name="AllGather",
+        output_path=RANK_SCALING_PLOT_PATH,
     )
-    axis.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
-    axis.legend()
-    axis.set_xticks(RANK_COUNTS)
-
-    figure.tight_layout()
-    figure.savefig(RANK_SCALING_PLOT_PATH, dpi=200)
-    plt.close(figure)
 
 
 # message-size sweep

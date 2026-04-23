@@ -1,19 +1,24 @@
 # Assignment 5
 
-This folder contains the AllGather portion of the assignment using the PyTorch `gloo` backend.
+This folder contains the AllGather and Broadcast portions of the assignment using the PyTorch `gloo` backend.
 
-Implemented algorithms:
+Implemented AllGather algorithms:
 
 - Ring
 - Recursive doubling
 - Swing
 
-The benchmark script is a one-shot runner. It:
+Implemented Broadcast algorithms:
 
-- validates correctness
-- runs the message-size sweep
-- runs the rank-scaling sweep
-- generates the two AllGather plots
+- Binary tree
+- Binomial tree
+
+The benchmark scripts are one-shot runners. They:
+
+- validate correctness
+- run the message-size sweep
+- run the rank-scaling sweep
+- generate the plots
 
 ## Docker
 
@@ -24,7 +29,21 @@ docker build -t hw5_image .
 docker run --rm -v "$(pwd)/plots:/app/plots" hw5_image
 ```
 
+The Docker command runs the AllGather algorithms by default. To run Broadcast:
+
+```bash
+docker run --rm -v "$(pwd)/plots:/app/plots" hw5_image broadcast
+```
+
+To run both benchmark groups:
+
+```bash
+docker run --rm -v "$(pwd)/plots:/app/plots" hw5_image all
+```
+
 Plots are written to:
 
 - `plots/allgather_vs_message_size.png`
 - `plots/allgather_vs_ranks.png`
+- `plots/broadcast_vs_message_size.png`
+- `plots/broadcast_vs_ranks.png`

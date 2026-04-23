@@ -4,6 +4,9 @@
   "benchmark_timed_iterations": 5,
   "fixed_rank_for_allgather_message_sweep": 8,
   "fixed_message_size_for_allgather_rank_sweep_bytes": 1048576,
+  "fixed_rank_for_broadcast_message_sweep": 8,
+  "fixed_message_size_for_broadcast_rank_sweep_bytes": 1048576,
+  "broadcast_source_rank": 0,
   "message_sizes_bytes": [
     1024,
     4096,
@@ -17,21 +20,28 @@
   "rank_counts": [
     2,
     4,
-    8
+    8,
+    16
   ],
   "allgather_algorithms": [
     "ring",
     "recursive_doubling",
     "swing"
   ],
+  "broadcast_algorithms": [
+    "binary_tree",
+    "binomial_tree"
+  ],
   "expected_plots": [
     "allgather_vs_message_size",
-    "allgather_vs_ranks"
+    "allgather_vs_ranks",
+    "broadcast_vs_message_size",
+    "broadcast_vs_ranks"
   ],
   "notes": [
     "The message-size sweep fixes the rank count at 8.",
     "The rank-scaling sweep fixes the message size at 1 MB per rank.",
     "The largest message size is capped at 8 MB per rank to keep memory usage reasonable.",
-    "Recursive doubling assumes a power-of-two number of ranks, so the default rank counts stay at 2, 4, and 8."
+    "Recursive doubling assumes a power-of-two number of ranks, so the default rank counts stay at powers of two."
   ]
 }
