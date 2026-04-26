@@ -100,18 +100,17 @@ if __name__ == "__main__":
     n = 8
     d = 4
     
-    # 1. Create the Scaled Uniform Traffic Matrix
+    # 1. Create the "Overextended" Traffic Matrix
     T = np.zeros((n, n))
     
-    # Each node sends 4/7 units of traffic to all 7 other nodes
-    traffic_per_node = 4.0 / 7.0
+    # Each node wants to send 0.8 units of traffic to 5 DIFFERENT neighbors
     for i in range(n):
-        for j in range(n):
-            if i != j:
-                T[i][j] = traffic_per_node
+        for k in range(1, 6):  # 5 destinations!
+            j = (i + k) % n
+            T[i][j] = 0.8
             
     print("--- Test Traffic Matrix (T) ---")
-    print(np.round(T, 3))
+    print(np.round(T, 2))
     print("\nRunning Gurobi Solver...")
     
     # 2. Run the solver
